@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Barcode Scanner — KRS</title>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      font-family: Sarabun, 'Noto Sans Thai', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #fff;
+    }
+
+    #wrapper {
+      position: relative;
+      width: 100vw;
+      max-width: 480px;
+      height: 100vh;
+      max-height: 640px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* กรอบเล็งตรงกลาง */
+    #frame {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -60%);
+      width: 72%; height: 22%;
+      border: none;
+      pointer-events: none;
+    }
+    /* มุมกรอบ */
+    #frame::before, #frame::after,
+    #frame-br::before, #frame-br::after {
+      content: '';
+      position: absolute;
+      width: 22px; height: 22px;
+      border-color: #ea580c;
+      border-style: solid;
+    }
+    #frame::before  { top: 0;    left: 0;  border-width: 3px 0 0 3px; border-radius: 3px 0 0 0; }
+    #frame::after   { top: 0;    right: 0; border-width: 3px 3px 0 0; border-radius: 0 3px 0 0; }
+    #frame-br::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; border-radius: 0 0 0 3px; }
+    #frame-br::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
+
+    /* เงามืดรอบกรอบ */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(#000a 0%, transparent 20%) top,
+        linear-gradient(transparent 80%, #000a 100%) bottom,
+        linear-gradient(#000a 0%, transparent 20%) left,
+        linear-gradient(transparent 80%, #000a 100%) right;
+      background-repeat: no-repeat;
+      background-size: 100% 50%, 100% 50%, 50% 100%, 50% 100%;
+      pointer-events: none;
+    }
+
+    /* เส้น laser วิ่ง */
+    #laser {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -60%);
+      width: 72%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #ea580c, transparent);
+      animation: scan 1.8s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes scan {
+      0%   { margin-top: calc(-11% + 0px); opacity: 1; }
+      90%  { margin-top: calc(11%);        opacity: 1; }
+      100% { margin-top: calc(11%);        opacity: 0; }
+    }
+
+    /* ข้อความ status */
+    #status {
+      position: absolute;
+      bottom: 18%;
+      width: 100%;
+      text-align: center;
+      font-size: 15px;
+      color: #f97316;
+      text-shadow: 0 1px 3px #000;
+      padding: 0 16px;
+    }
+    #hint {
+      position: absolute;
+      bottom: calc(18% + 28px);
+      width: 100%;
+      text-align: center;
+      font-size: 13px;
+      color: rgba(255,255,255,.75);
+      text-shadow: 0 1px 3px #000;
+    }
+
+    /* ปุ่มปิด */
+    #btnClose {
+      position: absolute;
+      bottom: 8%;
+      left: 50%; transform: translateX(-50%);
+      padding: 11px 36px;
+      background: rgba(255,255,255,.12);
+      border: 1.5px solid rgba(255,255,255,.35);
+      border-radius: 50px;
+      color: #fff;
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+    }
+    #btnClose:active { background: rgba(255,255,255,.22); }
+
+    /* Success flash */
+    #flash {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,.45);
+      pointer-events: none;
+    }
+
+    /* หน้า error / ไม่มีกล้อง */
+    #errScreen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 32px;
+      gap: 16px;
+    }
+    #errScreen p { font-size: 15px; color: #fca5a5; line-height: 1.6; }
+    #errScreen small { font-size: 12px; color: rgba(255,255,255,.5); }
+  </style>
+</head>
+<body>
+
+<div id="wrapper">
+  <video id="video" autoplay playsinline muted></video>
+  <div id="overlay"></div>
+  <div id="frame"><div id="frame-br"></div></div>
+  <div id="laser"></div>
+  <p id="hint">ส่องที่ barcode ให้อยู่ในกรอบสีส้ม</p>
+  <p id="status">กำลังเปิดกล้อง...</p>
+  <button id="btnClose" onclick="closeScanner()">✕ ยกเลิก</button>
+  <div id="flash"></div>
+</div>
+
+<!-- หน้า error (แสดงเมื่อกล้องใช้ไม่ได้) -->
+<div id="errScreen">
+  <div style="font-size:48px">📵</div>
+  <p id="errMsg">เปิดกล้องไม่ได้</p>
+  <small id="errDetail"></small>
+  <button onclick="closeScanner()" style="margin-top:8px;padding:10px 28px;background:#ea580c;border:none;border-radius:8px;color:#fff;font-size:14px;font-family:inherit;cursor:pointer">ปิดหน้าต่างนี้</button>
+</div>
+
+<script>
+  var _reader = null;
+  var _stream = null;
+  var _done   = false;
+
+  function closeScanner() {
+    stopAll();
+    window.close();
+  }
+
+  function stopAll() {
+    try { if (_reader) { _reader.reset(); _reader = null; } } catch(e) {}
+    try { if (_stream) { _stream.getTracks().forEach(function(t){ t.stop(); }); _stream = null; } } catch(e) {}
+  }
+
+  function showError(msg, detail) {
+    document.getElementById('wrapper').style.display = 'none';
+    var s = document.getElementById('errScreen');
+    s.style.display = 'flex';
+    document.getElementById('errMsg').textContent = msg || 'เปิดกล้องไม่ได้';
+    document.getElementById('errDetail').textContent = detail || '';
+  }
+
+  function onDetected(barcode) {
+    if (_done) return;
+    _done = true;
+
+    // flash ขาว
+    var f = document.getElementById('flash');
+    f.style.display = 'block';
+    setTimeout(function(){ f.style.display = 'none'; }, 120);
+
+    document.getElementById('status').textContent = '✓ ' + barcode;
+
+    // ส่ง barcode กลับไปให้ parent window
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ type: 'BARCODE_SCANNED', barcode: barcode }, '*');
+    }
+
+    stopAll();
+    setTimeout(function(){ window.close(); }, 600);
+  }
+
+  // ── เริ่มสแกน ─────────────────────────────────────────────────
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError('Browser นี้ไม่รองรับ Camera API', navigator.userAgent);
+  } else {
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    })
+    .then(function(stream) {
+      _stream = stream;
+      var video = document.getElementById('video');
+      video.srcObject = stream;
+      video.setAttribute('playsinline', '');
+      video.play();
+
+      document.getElementById('status').textContent = 'พร้อมสแกน';
+
+      var reader = new ZXing.BrowserMultiFormatReader();
+      _reader = reader;
+
+      reader.decodeFromVideoElement(video, function(result, err) {
+        if (_done) return;
+        if (result) { onDetected(result.getText()); }
+      });
+    })
+    .catch(function(err) {
+      var msg = err.name === 'NotAllowedError'
+        ? 'กรุณาอนุญาตกล้องใน Settings ของ Browser'
+        : err.name === 'NotFoundError'
+          ? 'ไม่พบกล้องในอุปกรณ์นี้'
+          : 'เปิดกล้องไม่ได้';
+      showError(msg, err.name + ': ' + err.message);
+    });
+  }
+
+  // ปิด scanner ถ้า parent window ถูกปิดด้วย
+  var _parentCheck = setInterval(function() {
+    if (window.opener && window.opener.closed) {
+      clearInterval(_parentCheck);
+      closeScanner();
+    }
+  }, 1000);
+</script>
+</body>
+</html>
