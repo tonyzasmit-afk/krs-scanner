@@ -184,7 +184,6 @@
 
   function stopAll() {
     try { if (_reader) { _reader.reset(); _reader = null; } } catch(e) {}
-    try { if (_stream) { _stream.getTracks().forEach(function(t){ t.stop(); }); _stream = null; } } catch(e) {}
   }
 
   function showError(msg, detail) {
@@ -216,37 +215,34 @@
   }
 
   // ── เริ่มสแกน ─────────────────────────────────────────────────
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showError('Browser นี้ไม่รองรับ Camera API', navigator.userAgent);
+  // ใช้ decodeFromConstraints — ให้ ZXing จัดการ camera เอง
+  // วิธีนี้ทำงานได้บน iOS Safari (GitHub Pages = HTTPS ไม่โดน GAS block)
+  if (typeof ZXing === 'undefined') {
+    showError('ไม่พบ ZXing library', 'โปรด reload หน้า');
   } else {
-    navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-    })
-    .then(function(stream) {
-      _stream = stream;
-      var video = document.getElementById('video');
-      video.srcObject = stream;
-      video.setAttribute('playsinline', '');
-      video.play();
+    var reader = new ZXing.BrowserMultiFormatReader();
+    _reader = reader;
 
-      document.getElementById('status').textContent = 'พร้อมสแกน';
-
-      var reader = new ZXing.BrowserMultiFormatReader();
-      _reader = reader;
-
-      reader.decodeFromVideoElement(video, function(result, err) {
+    reader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+      'video',
+      function(result, err) {
         if (_done) return;
-        if (result) { onDetected(result.getText()); }
-      });
-    })
-    .catch(function(err) {
+        if (result) {
+          onDetected(result.getText());
+        }
+        // err ปกติ ZXing จะส่งมาทุก frame ที่อ่านไม่ได้ ไม่ต้อง handle
+      }
+    ).catch(function(err) {
       var msg = err.name === 'NotAllowedError'
-        ? 'กรุณาอนุญาตกล้องใน Settings ของ Browser'
+        ? 'กรุณาอนุญาตกล้องใน Settings ของ Safari'
         : err.name === 'NotFoundError'
           ? 'ไม่พบกล้องในอุปกรณ์นี้'
           : 'เปิดกล้องไม่ได้';
-      showError(msg, err.name + ': ' + err.message);
+      showError(msg, err.name + ': ' + (err.message || ''));
     });
+
+    document.getElementById('status').textContent = 'พร้อมสแกน';
   }
 
   // ปิด scanner ถ้า parent window ถูกปิดด้วย
